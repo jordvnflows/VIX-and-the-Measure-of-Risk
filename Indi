@@ -1,0 +1,115 @@
+// © jordvnflows
+
+//@version=4
+study("VIX Risk Monitor", overlay=false, precision=1)
+
+//STANDARD INPUTS
+
+a_len                           =   input(type=input.integer, defval=11)
+a_src                           =   input(type=input.source, defval=high)
+await                           =   barstate.isconfirmed
+fastLength                      =   input(type=input.integer, defval=6)
+slowLength                      =   input(type=input.integer, defval=16)
+
+                                                                                //THE KAMA FORMULA IS USED TO HAVE AN ADAPTIVE MOVING AVERAGE. THIS IS SO WE CAN GET A HIGHER QUALITY READ UPON THE OPEN OF A NEW BAR.
+
+
+                                                                                //THE TRUE PRICE CALCULATION IS TO MEASURE THE DIFFERENCE BETWEEN THE OPEN AND HIGH ALONG WITH THE DIFFERENCE BETWEEN THE OPEN AND LOW AND ADDING THE TO THE PREVIOUS CLOSE. 
+                                                                                //IT'S TO MORE CLOSELY OFFSET MARKET PRICE AND GIVE "NATURAL" PRICE. THE WHITE CANDLES WILL REPRESENTS THE BASELINE SHOWING WHEN ITS OK TO SHORT.
+
+//plot(kama, color=color.black)    
+    
+//VIX ARRAY INPUT
+
+a_ref                           =   input(type=input.string, defval="CBOE:VIX")
+
+    //GET VIX DATA
+    
+ref_data                        =   security(symbol=a_ref, resolution="D", expression=high)
+refr_data                       =   security(symbol=a_ref, resolution="D", expression=close)
+refe_data                       =   security(symbol=a_ref, resolution="D", expression=open)
+reg_data                        =   security(symbol=a_ref, resolution="D", expression=low)
+        
+    //ARRAY & KAMA INTEGRATION
+            
+        //VIX TRUE PRICE
+
+            //TRUE PRICE CALCULATION
+    
+coef                            =   abs(refe_data - ref_data)
+coif                            =   abs(refe_data - reg_data)
+
+            //TRUE PRICE RESULT
+    
+coaf                            =   (coef + coif) / 2
+
+            //TRUE PRICE RESULT PLUS MARKET PRICE
+//    
+couf                            =   (refr_data[1] + coaf) / 2
+
+            //TRUE PRICE COLOR
+    
+coyf                            =   couf > refr_data[1]
+    
+coof                            =   coyf ? color.new(color.white, 67) : color.new(color.white, 100)
+
+        //KAMA FORMULA
+
+mom                             =   abs(change(ref_data, a_len))
+volatility                      =   sum(abs(change(ref_data)), a_len)
+
+            //EFFICIENCY RATIO
+    
+er                              =   volatility != 0 ? mom / volatility : 0
+
+fastAlpha                       =   2 / (fastLength + 1)
+slowAlpha                       =   2 / (slowLength + 1)
+
+alpha                           =   pow(er * (fastAlpha - slowAlpha) + slowAlpha, 2)
+
+            //KAMA RESULT
+    
+kama                            =   0.0
+kama                            :=  alpha * ref_data + (1 - alpha) * nz(kama[1], ref_data)
+    
+                                                                                //WE HAVE TO NOW FIND THE PREDICTIVE MARKET PRICE FOR THE VIX BY USING THE THE LOOKBACK PERIOD. THE KAMA WOULD BASE ITSELF OFF OF THE FORECASTING FORMULA INSTEAD OF CURRENT BAR 
+                                                                                //CURRENT BARS WERE PREDICTED THE DAY BEFORE THE SIGNAL IS AVAILABLE AT OPEN PRICE 
+
+        //PREDICTIVE FORMULA
+
+miii                            =   ((ref_data[3] - reg_data[3]) + (ref_data[2] + reg_data[2]) + (ref_data[1] - reg_data[1]) / 3) / 100
+kamafig                         =   kama + miii
+    
+        //VIX ARRAY DECLARE
+            
+var refa                        =   array.new_float(a_len, kama)
+
+            //STANDARD DEVIATIONS OF THE HIGH'S
+            
+kamfib                          =   array.stdev(refa) * 6.18 + kama
+
+                //HIGH-RISK MARKET SIGNAL
+                                //WHEN THE VIX HIGH GOES BEYOND 6.18 ST DEV'S IT PLOTS A SIGNAL TO BE 75% IN CASH AFTER THE OPEN
+pep                             =   ref_data > (sum(kamfib, a_len) / a_len)
+uii                             =   refr_data > kama
+yeti                            =   pep and uii
+
+oeo                             =   yeti ? color.new(color.red, 75) : color.new(color.white, 100)
+plotshape(yeti, color=oeo, style=shape.triangledown, text="", textcolor=color.white, size=size.tiny, location=location.top)
+
+                //MEDIUM-RISK MARKET SIGNAL
+                                //WHEN THE VIX HIGH GOES BEYOND 3.82 ST DEV'S IT PLOTS A SIGNAL TO BE 33% IN CASH AFTER THE OPEN
+ueu                             =   ref_data > (sum(kamfib, a_len) / a_len)
+ueeu                            =   refr_data < (sum(kamfib, a_len) / a_len)
+peuuu                           =   ueu and ueeu
+
+peu                             =   peuuu ? color.new(color.yellow, 75) : color.new(color.white, 100)
+plotshape(peuuu, color=peu, style=shape.diamond, text="", textcolor=color.white, size=size.tiny, location=location.belowbar)
+
+                //LOW-RISK (RE-ENTRY) MARKET SIGNAL
+                                //WHEN THE VIX HIGH GOES BELOW THE 6.18 ST DEV AND THE LOW IS LOWER THAN THE KAMA A SIGNAL IS DISPLAYED TO REPRESENT LOW RISK VOLATILITY
+aea                             =   ref_data < (sum(kamfib, a_len) / a_len)
+area                            =   aea and reg_data < kama
+
+pau                             =   area ? color.new(color.aqua, 75) : color.new(color.white, 100)
+plotshape(area, color=pau, style=shape.triangleup, text="", textcolor=color.white, size=size.tiny, location=location.bottom)
